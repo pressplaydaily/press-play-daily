@@ -200,7 +200,13 @@ GAME INFO FROM STEAM (use this as your main source of truth):
 RULES:
 - English only. Energetic, clear, conversational, like a friend talking to another gamer.
 - Total narration: 85 to 110 words, split in 8 to 12 short sentences (max 16 words each).
-- The FIRST sentence is a strong hook that makes people keep watching.
+- The FIRST sentence is the spoken HOOK. It must grab attention in the first 2 seconds.
+  Max 12 words. Start in the middle of the action with a bold claim, a surprising contrast,
+  a direct challenge to the viewer, or a question that creates curiosity the rest of the video answers.
+  Good styles: "Everyone says X, but the truth is Y." / "This game broke a rule most games never dare to." /
+  "Think you know X? One detail changes everything." / "Stop scrolling if you love X."
+  NEVER start with: "Did you know", "Have you ever", "Welcome", "Today", "In this", "Let's talk about", "Hey guys".
+  The hook must be specific to THIS game, never generic.
 - The LAST sentence is a punchy closing line that asks viewers a question to answer in the comments.
 - Use only facts from the info above or facts you are 100 percent sure about.
   Never invent numbers, sales figures, dates, quotes, rumors or release details.
@@ -210,7 +216,7 @@ RULES:
 
 Return ONLY a JSON object with these keys:
 "title": catchy YouTube title, max 65 characters, no hashtags,
-"hook": on-screen text, max 6 words, all about curiosity,
+"hook": on-screen text shown big during the first 3 seconds, 3 to 5 words, ALL about curiosity or a bold claim. It must NOT repeat the first sentence word for word; it should tease it (examples: "THE GAME THAT CHANGED EVERYTHING", "NOBODY SAW THIS COMING", "THIS IS WHY IT STILL WINS"),
 "sentences": list of strings (the narration, one sentence each),
 "description": 2 sentences for the YouTube description (no hashtags),
 "hashtags": list of 4 to 6 hashtags (with #), relevant to the game and gaming."""
