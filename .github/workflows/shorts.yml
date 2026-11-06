@@ -1,0 +1,64 @@
+name: Short
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: pressplaydaily
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa ffmpeg e font
+        run: |
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+          sudo apt-get install -y --no-install-recommends fonts-dejavu-core
+
+      - name: Installa librerie Python
+        run: pip install requests edge-tts google-api-python-client google-auth
+
+      - name: Scrivi lo script (Gemini + dati Steam)
+        env:
+          GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
+        run: python generate.py
+
+      - name: Crea il video
+        run: python make_video.py
+
+      - name: Salva il video per controllo
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: short
+          path: out/short.mp4
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Carica su YouTube
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: python upload.py
+
+      - name: Salva la cronologia
+        run: |
+          git config user.name "bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add history.json
+          git diff --cached --quiet || (git commit -m "cronologia" && git pull --rebase && git push)
