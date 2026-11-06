@@ -108,23 +108,53 @@ def clean_html(s):
     return re.sub(r"\s+", " ", s).strip()
 
 
+def gemini_models(key):
+    """Chiede a Google quali modelli Gemini 'flash' esistono adesso, dal piu' nuovo."""
+    try:
+        r = requests.get("https://generativelanguage.googleapis.com/v1beta/models",
+                         params={"key": key, "pageSize": 200}, timeout=60)
+        r.raise_for_status()
+        found = []
+        for m in r.json().get("models", []):
+            name = m.get("name", "").replace("models/", "")
+            if "generateContent" not in m.get("supportedGenerationMethods", []):
+                continue
+            low = name.lower()
+            if "flash" not in low or not low.startswith("gemini"):
+                continue
+            if any(x in low for x in ("image", "tts", "live", "audio", "native",
+                                      "embedding", "exp", "robotics", "computer")):
+                continue
+            ver = re.search(r"gemini-(\d+(?:\.\d+)?)", low)
+            v = float(ver.group(1)) if ver else 0.0
+            found.append((v, "preview" not in low, "lite" not in low, name))
+        found.sort(reverse=True)
+        names = [f[3] for f in found]
+        log("Modelli Gemini disponibili (provo i primi):", names[:6])
+        return names[:6]
+    except Exception as e:
+        log("Non riesco a leggere l'elenco dei modelli:", e)
+        return []
+
+
 def gemini_json(prompt):
     key = os.environ.get("GEMINI_KEY")
     if not key:
         sys.exit("ERRORE: manca il segreto GEMINI_KEY su GitHub (Settings > Secrets and variables > Actions).")
-    models = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"]
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.9, "responseMimeType": "application/json"},
-    }
-    last = ""
+    models = gemini_models(key) or ["gemini-flash-latest", "gemini-2.5-flash"]
+    errors = []
     for m in models:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"
+        use_json_mode = True
         for attempt in range(3):
+            gen = {"temperature": 0.9}
+            if use_json_mode:
+                gen["responseMimeType"] = "application/json"
+            payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": gen}
             try:
                 r = requests.post(url, params={"key": key}, json=payload, timeout=120)
             except Exception as e:
-                last = str(e)
+                errors.append(f"{m}: {e}")
                 time.sleep(10)
                 continue
             if r.status_code == 200:
@@ -132,16 +162,23 @@ def gemini_json(prompt):
                     parts = r.json()["candidates"][0]["content"]["parts"]
                     text = "".join(p.get("text", "") for p in parts)
                     text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M).strip()
+                    js = json.loads(text)
                     log(f"Gemini ok con il modello {m}")
-                    return json.loads(text)
+                    return js
                 except Exception as e:
-                    last = f"risposta non valida: {e}"
+                    errors.append(f"{m}: risposta non valida ({e})")
                     break
-            last = f"{m}: HTTP {r.status_code} {r.text[:200]}"
-            if r.status_code == 404:
+            errors.append(f"{m}: HTTP {r.status_code} {r.text[:160]}")
+            if r.status_code == 400 and use_json_mode:
+                use_json_mode = False
+                continue
+            if r.status_code in (404, 403):
                 break
             time.sleep((attempt + 1) * 15)
-    sys.exit("ERRORE Gemini: " + last)
+    log("Tutti i tentativi Gemini:")
+    for e in errors:
+        log(" -", e.replace("\n", " "))
+    sys.exit("ERRORE Gemini: nessun modello ha risposto (vedi sopra).")
 
 
 def build_prompt(d, angle_text):
