@@ -130,11 +130,17 @@ def get_trailers(movies, need_seconds):
 
 
 def plan_cuts(trailers, total_len):
-    n = max(4, math.ceil(total_len / 3.4))
-    cut = total_len / n
+    """Primi 2 tagli veloci (1,5s) per catturare subito, poi tagli da ~3,4s.
+    Si parte dalla parte centrale dei trailer, di solito la piu' dinamica
+    (l'inizio e' spesso pieno di loghi)."""
+    fast = 2
+    fast_len = 1.5
+    rest_total = max(total_len - fast * fast_len, 3.0)
+    n_rest = max(3, math.ceil(rest_total / 3.4))
+    lens = [fast_len] * fast + [rest_total / n_rest] * n_rest
     cuts = []
     counters = [0] * len(trailers)
-    for k in range(n):
+    for k, cut in enumerate(lens):
         ti = k % len(trailers)
         path, dur = trailers[ti]
         start_min = 2.0 if dur > 15 else 0.3
@@ -142,7 +148,8 @@ def plan_cuts(trailers, total_len):
         span = max(end_max - start_min, 0.5)
         j = counters[ti]
         counters[ti] += 1
-        start = start_min + (j * cut * 1.3) % span
+        offset = 0.35 * span
+        start = start_min + (offset + j * 3.4 * 1.3) % span
         cuts.append((path, round(start, 2), round(cut, 3)))
     return cuts
 
@@ -202,7 +209,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     lines = [f"Dialogue: 0,{ts(0)},{ts(total)},Brand,,0,0,0,,PRESS PLAY DAILY"]
     hook = clean_text(script.get("hook", "")).upper()
     if hook:
-        lines.append(f"Dialogue: 1,{ts(0)},{ts(min(3.2, total))},Hook,,0,0,0,,{hook}")
+        pop = r"{\fad(90,250)\fscx55\fscy55\t(0,170,\fscx110\fscy110)\t(170,320,\fscx100\fscy100)}"
+        lines.append(f"Dialogue: 1,{ts(0)},{ts(min(3.2, total))},Hook,,0,0,0,,{pop}{hook}")
     t = 0.0
     for sentence, d in zip(script["sentences"], durs):
         words = clean_text(sentence).split()
