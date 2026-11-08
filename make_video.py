@@ -1,9 +1,11 @@
 """Press Play Daily - passo 2: voce + trailer di Steam + sottotitoli = Short.
 Legge out/script.json e crea out/short.mp4"""
 import asyncio
+import glob
 import json
 import math
 import os
+import random
 import re
 import subprocess
 import sys
@@ -16,6 +18,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; PressPlayDaily/1.0)"}
 VOICE = "en-US-AndrewNeural"
 RATE = "+6%"
 PAD = 0.22  # pausa tra le frasi (secondi)
+MUSIC_VOL = 0.16  # volume della musica di sottofondo (0.16 = discreto)
 
 
 def log(*a):
@@ -105,7 +108,7 @@ def candidate_urls(movie):
 
 def get_trailers(movies, need_seconds):
     files, total = [], 0.0
-    for idx, mv in enumerate(movies[:5]):
+    for idx, mv in enumerate(movies[:8]):
         dest = f"{OUT}/trailer{idx}.mp4"
         ok = False
         for url in candidate_urls(mv):
@@ -233,6 +236,41 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         f.write(header + "\n".join(lines) + "\n")
 
 
+# ----------------------------------------------------------------- MUSICA + MIX FINALE
+def find_music():
+    files = sorted(glob.glob("music*.mp3"))
+    if not files:
+        return None
+    return os.path.abspath(random.choice(files))
+
+
+def final_render(total, music):
+    base = ["ffmpeg", "-y", "-loglevel", "error", "-i", "joined.mp4", "-i", "voice.wav"]
+    tail = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-c:a", "aac",
+            "-b:a", "160k", "-shortest", "-movflags", "+faststart", "short.mp4"]
+    attempts = []
+    if music:
+        mdur = duration(music)
+        off = random.uniform(0, mdur - total - 2) if mdur > total + 4 else 0.0
+        fc = (f"[0:v]ass=subs.ass[v];"
+              f"[2:a]volume={MUSIC_VOL},afade=t=in:d=1,"
+              f"afade=t=out:st={max(total - 1.5, 0):.2f}:d=1.5[m];"
+              f"[1:a][m]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]")
+        attempts.append(base + ["-stream_loop", "-1", "-ss", f"{off:.2f}", "-i", music,
+                                "-filter_complex", fc, "-map", "[v]", "-map", "[a]"] + tail)
+    attempts.append(base + ["-filter_complex", "[0:v]ass=subs.ass[v]",
+                            "-map", "[v]", "-map", "1:a"] + tail)
+    for i, cmd in enumerate(attempts):
+        r = subprocess.run(cmd, cwd=OUT, capture_output=True, text=True, timeout=900)
+        if r.returncode == 0:
+            if music and i == 0:
+                log("Musica di sottofondo aggiunta:", os.path.basename(music))
+            return
+        log("Montaggio finale fallito" + (" con la musica, riprovo senza" if music and i == 0 else ""))
+        log(r.stderr[-1500:])
+    sys.exit("ERRORE nel montaggio finale")
+
+
 # ----------------------------------------------------------------- MAIN
 def main():
     with open(f"{OUT}/script.json", encoding="utf-8") as f:
@@ -243,26 +281,16 @@ def main():
     total = sum(durs)
     log(f"Durata voce: {total:.1f}s")
 
-    log("2/4 Scarico i trailer...")
+    log("2/4 Scarico i video...")
     trailers = get_trailers(script["movies"], total)
 
     log("3/4 Preparo le clip verticali...")
     cuts = plan_cuts(trailers, total)
     render_segments(cuts)
 
-    log("4/4 Montaggio finale con sottotitoli...")
+    log("4/4 Montaggio finale con sottotitoli e musica...")
     make_ass(script, durs)
-    # ffmpeg va eseguito dentro la cartella out (per trovare subs.ass senza problemi di percorso)
-    r = subprocess.run(
-        ["ffmpeg", "-y", "-loglevel", "error",
-         "-i", "joined.mp4", "-i", "voice.wav", "-vf", "ass=subs.ass",
-         "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "veryfast",
-         "-crf", "22", "-c:a", "aac", "-b:a", "160k", "-shortest",
-         "-movflags", "+faststart", "short.mp4"],
-        cwd=OUT, capture_output=True, text=True, timeout=900)
-    if r.returncode != 0:
-        log(r.stderr[-2000:])
-        sys.exit("ERRORE nel montaggio finale")
+    final_render(total, find_music())
     log(f"FATTO: {OUT}/short.mp4, {duration(OUT + '/short.mp4'):.1f}s")
 
 
