@@ -35,6 +35,7 @@ jobs:
       - name: Scrivi lo script (Gemini + dati Steam)
         env:
           GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
+          PIXABAY_KEY: ${{ secrets.PIXABAY_KEY }}
         run: python generate.py
 
       - name: Crea il video
