@@ -192,6 +192,44 @@ def clean_text(s):
     return re.sub(r"[{}\\\n]", " ", s).strip()
 
 
+def subscribe_events(total):
+    """Pulsante SUBSCRIBE in alto: pulsa, viene 'premuto' e diventa SUBSCRIBED, poi ricomincia."""
+    cx, cy = 540, 255
+    W, H, R = 440, 100, 26
+    shape = (f"m {R} 0 l {W - R} 0 b {W - R // 2} 0 {W} {R // 2} {W} {R} l {W} {H - R} "
+             f"b {W} {H - R // 2} {W - R // 2} {H} {W - R} {H} l {R} {H} "
+             f"b {R // 2} {H} 0 {H - R // 2} 0 {H - R} l 0 {R} b 0 {R // 2} {R // 2} 0 {R} 0")
+    bs = chr(92)  # backslash
+
+    def tags(*parts):
+        return "{" + "".join(bs + p for p in parts) + "}"
+
+    pulse = ("t(0,200," + bs + "fscx108" + bs + "fscy108)" + bs + "t(200,350," + bs + "fscx100" + bs + "fscy100)")
+    pulse2 = ("t(1800,1950," + bs + "fscx107" + bs + "fscy107)" + bs + "t(1950,2100," + bs + "fscx100" + bs + "fscy100)")
+    press = "t(3300,3450," + bs + "fscx92" + bs + "fscy92)"
+    pop = ("t(0,160," + bs + "fscx110" + bs + "fscy110)" + bs + "t(160,300," + bs + "fscx100" + bs + "fscy100)")
+    ev = []
+    t = 0.6
+    while t < total - 0.8:
+        a_end = min(t + 3.6, total)
+        b_end = min(t + 5.6, total)
+        base_in = ["an5", f"pos({cx},{cy})"]
+        # fase 1: pulsante rosso SUBSCRIBE
+        red = tags(*base_in, "bord0", "shad0", "1c&H0000FF&", "fad(120,0)", "fscx70", "fscy70",
+                   pulse, pulse2, press, "p1")
+        txt = tags("an5", f"pos({cx},{cy - 3})", "fad(120,0)", "fscx70", "fscy70", pulse, pulse2, press)
+        ev.append(f"Dialogue: 2,{ts(t)},{ts(a_end)},Btn,,0,0,0,,{red}{shape}{tags('p0')}")
+        ev.append(f"Dialogue: 3,{ts(t)},{ts(a_end)},Btn,,0,0,0,,{txt}SUBSCRIBE")
+        # fase 2: pulsante grigio SUBSCRIBED con spunta
+        if a_end < total - 0.3:
+            gray = tags(*base_in, "bord0", "shad0", "1c&H555555&", "fscx92", "fscy92", pop, "p1")
+            txt2 = tags("an5", f"pos({cx},{cy - 3})", "fscx92", "fscy92", pop)
+            ev.append(f"Dialogue: 2,{ts(a_end)},{ts(b_end)},Btn,,0,0,0,,{gray}{shape}{tags('p0')}")
+            ev.append(f"Dialogue: 3,{ts(a_end)},{ts(b_end)},Btn,,0,0,0,,{txt2}SUBSCRIBED \u2713")
+        t += 6.4
+    return ev
+
+
 def make_ass(script, durs):
     header = """[Script Info]
 ScriptType: v4.00+
@@ -202,8 +240,9 @@ WrapStyle: 0
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Cap,DejaVu Sans,78,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,2,70,70,330,1
-Style: Brand,DejaVu Sans,46,&H0000D7FF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,2,0,1,5,2,8,60,60,150,1
-Style: Hook,DejaVu Sans,86,&H0000FFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,8,2,8,70,70,290,1
+Style: Brand,DejaVu Sans,44,&H0000D7FF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,2,0,1,5,2,8,60,60,95,1
+Style: Hook,DejaVu Sans,86,&H0000FFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,8,2,8,70,70,370,1
+Style: Btn,DejaVu Sans,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -214,6 +253,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     if hook:
         pop = r"{\fad(90,250)\fscx55\fscy55\t(0,170,\fscx110\fscy110)\t(170,320,\fscx100\fscy100)}"
         lines.append(f"Dialogue: 1,{ts(0)},{ts(min(3.2, total))},Hook,,0,0,0,,{pop}{hook}")
+    lines += subscribe_events(total)
     t = 0.0
     for sentence, d in zip(script["sentences"], durs):
         words = clean_text(sentence).split()
