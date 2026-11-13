@@ -52,6 +52,13 @@ UPCOMING_ANGLES = [
     ("up_five", "5 reasons {g} could be a big deal"),
 ]
 
+TREND_ANGLES = [
+    ("tr_why", "why {g} is blowing up right now"),
+    ("tr_jump", "should you jump into {g} right now?"),
+    ("tr_what", "what is {g} and why are so many players flooding in?"),
+    ("tr_hype", "the hype around {g}, explained in 60 seconds"),
+]
+
 GTA_RELEASE = date(2026, 11, 19)
 GTA_FACTS = {
     "name": "Grand Theft Auto VI (GTA 6)",
@@ -237,6 +244,31 @@ def steam_upcoming():
     return found
 
 
+def steam_trending():
+    """Giochi piu' giocati su Steam in questo momento: [(appid, posizione), ...]."""
+    found = []
+    try:
+        r = requests.get("https://api.steampowered.com/ISteamChartsService/GetMostPlayedGames/v1/",
+                         headers=HEADERS, timeout=30)
+        r.raise_for_status()
+        for it in r.json().get("response", {}).get("ranks", []):
+            if it.get("appid"):
+                found.append((int(it["appid"]), int(it.get("rank", len(found) + 1))))
+    except Exception as e:
+        log("Classifica 'piu' giocati ora' non disponibile:", str(e)[:120])
+    if not found:
+        try:
+            r = requests.get("https://store.steampowered.com/api/featuredcategories",
+                             params={"cc": "us", "l": "english"}, headers=HEADERS, timeout=30)
+            r.raise_for_status()
+            for i, it in enumerate(r.json().get("top_sellers", {}).get("items", []), start=1):
+                if it.get("id"):
+                    found.append((int(it["id"]), i))
+        except Exception as e:
+            log("Classifica 'piu' venduti' non disponibile:", str(e)[:120])
+    return found
+
+
 def build_info(d):
     return {
         "name": d.get("name"),
@@ -345,6 +377,29 @@ def ctx_upcoming(history):
     return None
 
 
+def ctx_trending(history):
+    recent = {h.get("game") for h in history[-15:]}
+    cands = steam_trending()[:40]
+    random.shuffle(cands)
+    for appid, rank in cands[:12]:
+        try:
+            d = steam_details(appid)
+        except Exception as e:
+            log("Errore Steam con", appid, e)
+            continue
+        if not d or d["name"] in recent:
+            continue
+        info = build_info(d)
+        info["trending"] = (f"One of the most played games on Steam right now "
+                            f"(rank {rank} by current players)")
+        rules = ("\nThis game is trending right now. You may say it is one of the most played games "
+                 "on Steam at the moment. Do not quote player counts or numbers that are not in the info.\n")
+        return {"mode": "trending", "query": d["name"], "name": d["name"], "info": info,
+                "movies": d["movies"], "angle": random.choice(TREND_ANGLES), "rules": rules,
+                "disclaimer": DISCLAIMER_TRAILER, "tags": ["trending", "steam"]}
+    return None
+
+
 def pixabay_movies():
     key = os.environ.get("PIXABAY_KEY")
     if not key:
@@ -397,13 +452,14 @@ def ctx_gta(history):
 
 def choose_context(history):
     r = random.random()
-    order = []
-    if os.environ.get("PIXABAY_KEY") and r < 0.15:
-        order = [ctx_gta, ctx_upcoming, ctx_popular]
-    elif r < 0.45:
-        order = [ctx_upcoming, ctx_popular]
+    if os.environ.get("PIXABAY_KEY") and r < 0.10:
+        order = [ctx_gta, ctx_trending, ctx_popular]
+    elif r < 0.35:
+        order = [ctx_upcoming, ctx_trending, ctx_popular]
+    elif r < 0.65:
+        order = [ctx_trending, ctx_popular, ctx_upcoming]
     else:
-        order = [ctx_popular, ctx_upcoming]
+        order = [ctx_popular, ctx_trending, ctx_upcoming]
     for fn in order:
         try:
             ctx = fn(history)
