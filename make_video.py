@@ -42,14 +42,12 @@ def duration(path):
 
 # ---------------------------------------------------------------- VOCE
 def tts_sentence(text, path):
-    """Crea l'mp3 e restituisce i tempi delle parole [(inizio, fine), ...] in secondi."""
+    """Crea l'mp3 e restituisce i tempi [(inizio, fine), ...] in secondi (anche solo della frase).
+    Non si chiedono i tempi parola-per-parola a Microsoft: il servizio a volte non risponde."""
     import edge_tts
 
-    async def go():
-        try:
-            comm = edge_tts.Communicate(text, VOICE, rate=RATE, boundary="WordBoundary")
-        except TypeError:  # versioni vecchie di edge-tts
-            comm = edge_tts.Communicate(text, VOICE, rate=RATE)
+    async def via_stream():
+        comm = edge_tts.Communicate(text, VOICE, rate=RATE)
         audio = bytearray()
         bounds = []
         async for ch in comm.stream():
@@ -59,14 +57,20 @@ def tts_sentence(text, path):
             elif kind in ("WordBoundary", "SentenceBoundary"):
                 off = ch["offset"] / 1e7
                 bounds.append((off, off + ch["duration"] / 1e7))
+        if not audio:
+            raise RuntimeError("nessun audio ricevuto")
         with open(path, "wb") as f:
             f.write(audio)
         return bounds
 
+    async def via_save():
+        await edge_tts.Communicate(text, VOICE, rate=RATE).save(path)
+        return []
+
     last = None
     for attempt in range(6):
         try:
-            bounds = asyncio.run(go())
+            bounds = asyncio.run(via_stream() if attempt % 2 == 0 else via_save())
             if os.path.exists(path) and os.path.getsize(path) > 1000:
                 return bounds
         except Exception as e:
